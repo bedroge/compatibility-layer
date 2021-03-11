@@ -1,55 +1,61 @@
 # Add a custom overlay to the Gentoo Prefix installation.
 ---
 - name: Add portage user if missing
-  become: True
   lineinfile:
     path: /etc/passwd
     regexp: portage
     line: portage:x:250:250:portage:/var/tmp/portage:/bin/false
+  become: yes
+  tags:
+    - add_portage_user
+    - never
 
 - name: Add portage group if missing
-  become: True
   lineinfile:
     path: /etc/group
     regexp: portage
     line: portage::250:portage
+  become: yes
+  tags:
+    - add_portage_user
+    - never
 
 - name: Install equery command (dependency for the portage module)
   command:
-    cmd: emerge gentoolkit
-    creates: "{{ gentoo_prefix_path }}/usr/bin/equery"
+    cmd: "{{ prefix_singularity_exec_command }}/usr/bin/emerge gentoolkit
+    creates: "{{ gentoo_prefix_path_host }}/usr/bin/equery"
 
 - name: Create repos directory
   file:
-    path: "{{ gentoo_prefix_path }}/etc/portage/repos.conf"
+    path: "{{ gentoo_prefix_path_host }}/etc/portage/repos.conf"
     state: directory
     mode: '0755'
 
 - name: Install eselect-repository
-  portage:
-    package: eselect-repository
-    state: present
+  command:
+    cmd: "{{ prefix_singularity_exec_command }}/usr/bin/emerge eselect-repository"
+    creates: "{{ gentoo_prefix_path_host }}/etc/eselect/repository.conf"
 
 # We need git in order to add Gentoo overlays hosted on git repositories.
 - name: Install git
-  portage:
-    package: dev-vcs/git
-    state: present
+  command:
+    cmd: "{{ prefix_singularity_exec_command }}/usr/bin/emerge dev-vcs/git
+    creates: "{{ gentoo_prefix_path_host }}/usr/bin/git"
 
 - name: Check which repositories have been installed
-  command: eselect repository list -i
+  command: "{{ prefix_singularity_exec_command }}/usr/bin/eselect repository list -i"
   register: repositories_installed
   changed_when: False
 
 - name: Add custom overlay configuration
   command:
-    cmd: "eselect repository add {{ item.name }} {{ item.source }} {{ item.url }}"
+    cmd: "{{ prefix_singularity_exec_command }}/usr/bin/eselect repository add {{ item.name }} {{ item.source }} {{ item.url }}"
   when: item.name not in repositories_installed.stdout
   loop: "{{ custom_overlays }}"
 
 - name: Make configuration file with overlays that can override eclasses
   copy:
-    dest: "{{ gentoo_prefix_path }}/etc/portage/repos.conf/eclass-overrides.conf"
+    dest: "{{ gentoo_prefix_path_host }}/etc/portage/repos.conf/eclass-overrides.conf"
     mode: "0644"
     content: |
       [DEFAULT]
@@ -59,16 +65,19 @@
       }}
 
 - name: Sync the repositories
-  portage:
-    sync: 'yes'
+  command:
+    cmd: "{{ prefix_singularity_exec_command }}/usr/bin/emerge --sync {{ item.name }}"
+  changed_when: False
+  loop: "{{ custom_overlays }}"
 
 - name: Find all files and directories in the etc/portage directory of the overlay
   find:
     file_type: any
-    paths: "{{ gentoo_prefix_path }}/var/db/repos/{{ item.name }}/etc/portage"
+    paths: "{{ gentoo_prefix_path_host }}/var/db/repos/{{ item.name }}/etc/portage"
   loop: "{{ custom_overlays }}"
   register: find_configs
 
+# How to fix this?
 - name: Make symlinks to the portage settings in the custom overlay
   file:
     src: "{{ item.path }}"

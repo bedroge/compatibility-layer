@@ -7,7 +7,7 @@
 
 - name: Check if a Prefix installation is found at the specified location
   stat:
-    path: "{{ gentoo_prefix_path }}/startprefix"
+    path: "{{ gentoo_prefix_path_host }}/startprefix"
   register: startprefix
 
 - include_tasks: install_prefix.yml
@@ -23,7 +23,6 @@
   - include_tasks: add_overlay.yml
     args:
       apply:
-        become: False
         environment:
           PYTHON_TARGETS: "{{ prefix_python_targets }}"
 
